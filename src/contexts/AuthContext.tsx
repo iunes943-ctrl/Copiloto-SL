@@ -1,6 +1,7 @@
-// Contexto de autenticação e unidade ativa do balcão (SPEC-1-001/C2).
+// Contexto de autenticação e unidade ativa do balcão (SPEC-1-001/C2 e C1).
 // A sessão do balcão só existe com usuário autenticado + unidade autorizada
-// escolhida; troca/logout remove o contexto anterior.
+// escolhida; troca/logout remove o contexto anterior. A autorização é conferida
+// pela guarda canUseUnit contra os vínculos do usuário, nunca por valor solto.
 import {
   createContext,
   useContext,
@@ -21,6 +22,7 @@ import {
   resolveActiveUnit,
   chooseUnit,
   clearActiveUnit,
+  canUseUnit,
   type MembershipView,
 } from '@/services/memberships'
 
@@ -90,15 +92,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const selectUnit = async (unitId: string) => {
-    const target = memberships.find((m) => m.active && m.unit_id === unitId)
-    if (!target) {
+    // C1: a autorização é conferida pela guarda canUseUnit contra os vínculos do usuário.
+    if (!canUseUnit(memberships, unitId)) {
       throw new Error('Unidade não autorizada para este usuário.')
     }
     // Auditoria da mudança de escopo: o servidor confere o vínculo e grava o
     // evento. Falha aqui mantém a tela e mostra o erro — sem troca não auditada.
     await registrarTrocaUnidade(unitId)
     chooseUnit(unitId)
-    setActiveUnit(target)
+    setActiveUnit(memberships.find((m) => m.active && m.unit_id === unitId) ?? null)
   }
 
   return (

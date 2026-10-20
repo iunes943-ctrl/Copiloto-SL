@@ -1,7 +1,7 @@
 // Vínculos usuário↔unidade (SPEC-1-001). Módulo puro: sem acesso ao backend.
 // A sessão do balcão só inicia com unidade autorizada: vínculo ativo escolhido
 // pela atendente e resolvido contra a lista de vínculos do usuário — nunca
-// contra valor solto do navegador.
+// contra valor solto do navegador. canUseUnit é a guarda de autorização.
 import { getActiveUnitId, setActiveUnit, clearActiveUnit as clearSessionUnit } from '@/lib/session'
 
 export interface MembershipView {
@@ -37,3 +37,6 @@ export const clearActiveUnit = (): void => {
 export const chooseUnit = (unitId: string): void => {
   setActiveUnit(unitId)
 }
+
+export const canUseUnit = (memberships: MembershipView[], unitId: string): boolean =>
+  memberships.some((m) => m.active && m.unit_id === unitId)

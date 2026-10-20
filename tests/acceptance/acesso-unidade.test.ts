@@ -4,11 +4,12 @@ import {
   getUnitLabel,
   resolveActiveUnit,
   getActiveUnit,
+  canUseUnit,
   type MembershipView,
 } from '@/services/memberships'
 import { setActiveUnit, clearActiveUnit as clearStoredUnit } from '@/lib/session'
 
-// Fixtures sintéticas de 01_insumos/fixtures-piloto.json (SPEC-1-001, cenário C2).
+// Fixtures sintéticas de 01_insumos/fixtures-piloto.json (SPEC-1-001, cenários C2 e C1).
 // Nenhum dado real de paciente; nomes/ids sintéticos.
 
 const memberships: MembershipView[] = [
@@ -83,5 +84,32 @@ describe('SPEC-1-001 / C2 — atendente só inicia sessão após escolher unidad
 
   it('rótulo da unidade usa o nome do vínculo', () => {
     expect(getUnitLabel(memberships[0])).toBe('Matriz')
+  })
+})
+
+describe('SPEC-1-001 / C1 — contas de unidades distintas não acessam sessão uma da outra', () => {
+  const att1: MembershipView[] = memberships.filter((m) => m.id === 'm1' || m.id === 'm3')
+  const att2: MembershipView[] = memberships.filter((m) => m.id === 'm2')
+
+  it('vínculos de att1 não aparecem na sessão de att2', () => {
+    expect(getMyMemberships(att2).map((m) => m.unit_id)).toEqual(['DEMO-U2'])
+  })
+
+  it('unidade gravada por att1 não resolve na sessão de att2', () => {
+    clearStoredUnit()
+    setActiveUnit('DEMO-U1')
+    expect(resolveActiveUnit(att2)).toBeNull()
+  })
+
+  it('guarda recusa unidade de outra conta', () =>  {
+    expect(canUseUnit(att2, 'DEMO-U1')).toBe(false)
+  })
+
+  it('guarda permite unidade própria', () => {
+    expect(canUseUnit(att2, 'DEMO-U2')).toBe(true)
+  })
+
+  it('guarda recusa vínculo inativo', () => {
+    expect(canUseUnit(att1, 'DEMO-U3')).toBe(false)
   })
 })
