@@ -8,8 +8,9 @@ import {
   type MembershipView,
 } from '@/services/memberships'
 import { setActiveUnit, clearActiveUnit as clearStoredUnit } from '@/lib/session'
+import { podeConceder } from '@/services/papeis'
 
-// Fixtures sintéticas de 01_insumos/fixtures-piloto.json (SPEC-1-001, cenários C2 e C1).
+// Fixtures sintéticas de 01_insumos/fixtures-piloto.json (SPEC-1-001, cenários C1, C2 e C3).
 // Nenhum dado real de paciente; nomes/ids sintéticos.
 
 const memberships: MembershipView[] = [
@@ -101,7 +102,7 @@ describe('SPEC-1-001 / C1 — contas de unidades distintas não acessam sessão 
     expect(resolveActiveUnit(att2)).toBeNull()
   })
 
-  it('guarda recusa unidade de outra conta', () =>  {
+  it('guarda recusa unidade de outra conta', () => {
     expect(canUseUnit(att2, 'DEMO-U1')).toBe(false)
   })
 
@@ -111,5 +112,27 @@ describe('SPEC-1-001 / C1 — contas de unidades distintas não acessam sessão 
 
   it('guarda recusa vínculo inativo', () => {
     expect(canUseUnit(att1, 'DEMO-U3')).toBe(false)
+  })
+})
+
+describe('SPEC-1-001 / C3 — papéis administrativos só por concessão explícita e auditada', () => {
+  it('atendente sem alçada não concede papel', () => {
+    expect(podeConceder(['attendant'], 'u-att1', { user_id: 'u-att2', roles: ['manager'] })).toBe(false)
+  })
+
+  it('gestora (manager) sem alçada de concessão não concede papel', () => {
+    expect(podeConceder(['manager'], 'u-mgr', { user_id: 'u-att2', roles: ['leader'] })).toBe(false)
+  })
+
+  it('diretoria com alçada concede papel permitido', () => {
+    expect(podeConceder(['director'], 'u-dir', { user_id: 'u-att2', roles: ['leader'] })).toBe(true)
+  })
+
+  it('ninguém concede papel a si mesmo', () => {
+    expect(podeConceder(['admin'], 'u-admin', { user_id: 'u-admin', roles: ['admin'] })).toBe(false)
+  })
+
+  it('papel fora da lista do sistema é recusado', () => {
+    expect(podeConceder(['admin'], 'u-admin', { user_id: 'u-att2', roles: ['superadmin'] })).toBe(false)
   })
 })
