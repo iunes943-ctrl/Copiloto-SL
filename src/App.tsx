@@ -7,6 +7,7 @@ import { AuthProvider } from '@/contexts/AuthContext'
 import Index from './pages/Index'
 import LoginPage from './pages/LoginPage'
 import SelectUnitPage from './pages/SelectUnitPage'
+import CatalogoPage from './pages/CatalogoPage'
 import NotFound from './pages/NotFound'
 import Layout from './components/Layout'
 
@@ -24,6 +25,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/unidade" element={<SelectUnitPage />} />
+            <Route path="/catalogo" element={<CatalogoPage />} />
             {/* ADD ALL CUSTOM ROUTES MUST BE ADDED HERE */}
           </Route>
           <Route path="*" element={<NotFound />} />

@@ -1,6 +1,8 @@
 // Página inicial do balcão (SPEC-1-001/C2): nome do usuário, unidade ativa,
 // modo demonstração e botão de sair. Sem unidade ativa, volta para a escolha.
+// Link para conferência do catálogo (SPEC-1-002/C1).
 import { Navigate, useNavigate } from 'react-router-dom'
+import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -50,21 +52,37 @@ const Index = () => {
           </Button>
         </div>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle>Atendimento</CardTitle>
-          <CardDescription>
-            Contexto do paciente e ofertas aparecerão aqui nas próximas etapas da
-            fase 1.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground">
-            Você está atendendo em <strong>{activeUnit.unit_name}</strong>. Ao trocar
-            de unidade ou sair, o contexto deste atendimento é encerrado.
-          </p>
-        </CardContent>
-      </Card>
+      <div className="grid gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Atendimento</CardTitle>
+            <CardDescription>
+              Contexto do paciente e ofertas aparecerão aqui nas próximas etapas da
+              fase 1.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground">
+              Você está atendendo em <strong>{activeUnit.unit_name}</strong>. Ao trocar
+              de unidade ou sair, o contexto deste atendimento é encerrado.
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Catálogo</CardTitle>
+            <CardDescription>
+              Conferência dos exames importados: contagem, busca e conflitos de
+              código em destaque.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button asChild>
+              <Link to="/catalogo">Conferir catálogo</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   )
 }
