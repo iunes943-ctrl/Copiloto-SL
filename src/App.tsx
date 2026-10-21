@@ -8,6 +8,7 @@ import Index from './pages/Index'
 import LoginPage from './pages/LoginPage'
 import SelectUnitPage from './pages/SelectUnitPage'
 import CatalogoPage from './pages/CatalogoPage'
+import OfertasPage from './pages/OfertasPage'
 import NotFound from './pages/NotFound'
 import Layout from './components/Layout'
 
@@ -26,6 +27,7 @@ const App = () => (
             <Route path="/login" element={<LoginPage />} />
             <Route path="/unidade" element={<SelectUnitPage />} />
             <Route path="/catalogo" element={<CatalogoPage />} />
+            <Route path="/ofertas" element={<OfertasPage />} />
             {/* ADD ALL CUSTOM ROUTES MUST BE ADDED HERE */}
           </Route>
           <Route path="*" element={<NotFound />} />
