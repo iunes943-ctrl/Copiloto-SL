@@ -9,6 +9,7 @@ import LoginPage from './pages/LoginPage'
 import SelectUnitPage from './pages/SelectUnitPage'
 import CatalogoPage from './pages/CatalogoPage'
 import OfertasPage from './pages/OfertasPage'
+import ConsultaPage from './pages/ConsultaPage'
 import NotFound from './pages/NotFound'
 import Layout from './components/Layout'
 
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/unidade" element={<SelectUnitPage />} />
             <Route path="/catalogo" element={<CatalogoPage />} />
             <Route path="/ofertas" element={<OfertasPage />} />
+            <Route path="/consulta" element={<ConsultaPage />} />
             {/* ADD ALL CUSTOM ROUTES MUST BE ADDED HERE */}
           </Route>
           <Route path="*" element={<NotFound />} />

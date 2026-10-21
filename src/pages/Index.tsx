@@ -1,6 +1,6 @@
 // Página inicial do balcão (SPEC-1-001/C2): nome do usuário, unidade ativa,
 // modo demonstração e botão de sair. Sem unidade ativa, volta para a escolha.
-// Link para conferência do catálogo (SPEC-1-002/C1).
+// Links para consulta, catálogo e ofertas (SPEC-1-002).
 import { Navigate, useNavigate } from 'react-router-dom'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -55,17 +55,16 @@ const Index = () => {
       <div className="grid gap-4">
         <Card>
           <CardHeader>
-            <CardTitle>Atendimento</CardTitle>
+            <CardTitle>Consultar oferta</CardTitle>
             <CardDescription>
-              Contexto do paciente e ofertas aparecerão aqui nas próximas etapas da
-              fase 1.
+              Preço e argumento aprovados para o exame, no perfil e na unidade do
+              atendimento.
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Você está atendendo em <strong>{activeUnit.unit_name}</strong>. Ao trocar
-              de unidade ou sair, o contexto deste atendimento é encerrado.
-            </p>
+            <Button asChild>
+              <Link to="/consulta">Consultar oferta</Link>
+            </Button>
           </CardContent>
         </Card>
         <Card>
@@ -77,8 +76,22 @@ const Index = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button asChild>
+            <Button variant="outline" asChild>
               <Link to="/catalogo">Conferir catálogo</Link>
+            </Button>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Ofertas</CardTitle>
+            <CardDescription>
+              Candidatos com aprovação técnica e comercial separadas; ativação
+              exige as duas.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="outline" asChild>
+              <Link to="/ofertas">Ver ofertas</Link>
             </Button>
           </CardContent>
         </Card>
