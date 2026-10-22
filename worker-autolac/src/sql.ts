@@ -68,6 +68,7 @@ export function criarPool(cfg: {
   user: string
   password: string
   encrypt: boolean
+  trustCert: boolean
 }): SqlClient {
   const config: sql.config = {
     server: cfg.host,
@@ -77,7 +78,7 @@ export function criarPool(cfg: {
     password: cfg.password,
     options: {
       encrypt: cfg.encrypt,
-      trustServerCertificate: false, // TLS validado — nunca ignorar erro de certificado em produção
+      trustServerCertificate: cfg.trustCert, // AUTOLAC_SQL_TRUST_CERT=true quando o servidor usa certificado próprio (conexão segue criptografada)
       connectTimeout: 10_000,
       requestTimeout: 10_000,
     },
