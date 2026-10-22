@@ -7,7 +7,7 @@
  */
 import type { SqlClient } from './sql.js'
 import { MAPEAMENTO, verificarEstrutura } from './sql.js'
-import type { SessoesClient, SessaoAberta } from './sessoes.js'
+import type { SessoesClient, SessaoAberta } from './sessoes.ts'
 import type { IngestClient } from './ingest.js'
 import type { CursorStore, CursorState } from './cursor.js'
 import { proximoCursor } from './cursor.js'
@@ -70,57 +70,7 @@ export async function rodarCiclo(deps: CicloDeps): Promise<ResultadoCiclo> {
   const resultado: ResultadoCiclo = {
     sessoesAbertas: 0,
     fichasLidas: 0,
-    retratosEnviados: 0,
-    confirmados: [],
-    cursor: null,
-    estadoFonte: 'aguardando',
   }
-
-  // 1) Estrutura primeiro (RN-13) — divergência para tudo com erro de estrutura.
-  try {
-    await verificarEstrutura(deps.sql)
-  } catch (e) {
-    resultado.estadoFonte = 'leitura_parada'
-    throw e
-  }
-
-  // 2) Sessões abertas no Skip.
-  const sessoes = await deps.sessoes.listarSessoesAbertas()
-  resultado.sessoesAbertas = sessoes.length
-  if (sessoes.length === 0) {
-    resultado.estadoFonte = 'aguardando'
-    return resultado // mantém cursor, lê nada
-  }
-
-  // 3) Cursor persistente.
-  const estado = await deps.cursor.ler()
-
-  // 4) Resolução CPF → PACIENTE.ID via SQL (a sessão abre pelo CPF, não pelo ID).
-  const cpfs = [...new Set(sessoes.map((s) => String(s.cpf).replace(/\D/g, '')).filter((c) => c.length > 0))]
-  if (cpfs.length === 0) {
-    resultado.estadoFonte = 'aguardando'
-    return resultado
-  }
-  const listaCpfs = cpfs.map((c) => `'${c}'`).join(',')
-  const linhasPacientes = await deps.sql.query<{ ID: number; CPF: string | null }>(
-    `SELECT ${MAPEAMENTO.paciente.chave}, CPF
-     FROM ${MAPEAMENTO.paciente.tabela}
-     WHERE REPLACE(REPLACE(REPLACE(CPF, '.', ''), '-', ''), ' ', '') IN (${listaCpfs})`,
-  )
-  // PACIENTE.ID → sessão: 1º CPF normalizado que casar vence; entrada existente não é sobrescrita.
-  const mapa = new Map<number, SessaoAberta>()
-  for (const linha of linhasPacientes.recordset) {
-    const cpfLinha = String(linha.CPF ?? '').replace(/\D/g, '')
-    if (!cpfLinha) continue
-    const sessao = sessoes.find((s) => String(s.cpf).replace(/\D/g, '') === cpfLinha)
-    if (sessao && !mapa.has(linha.ID)) mapa.set(linha.ID, sessao)
-  }
-  const idsPacientes = [...mapa.keys()]
-  if (idsPacientes.length === 0) {
-    resultado.estadoFonte = 'aguardando'
-    return resultado
-  }
-  const unidades = [...new Set(sessoes.map((s) => s.unit_local))]
   const { fichas, itens, pacientes } = await lerFichas(deps.sql, idsPacientes, unidades, estado?.ultimaFichaId ?? 0)
   resultado.fichasLidas = fichas.length
   if (fichas.length === 0) {
@@ -147,12 +97,15 @@ export async function rodarCiclo(deps: CicloDeps): Promise<ResultadoCiclo> {
   )
 
   // 6) Envelope para o Skip — roteado por session_id (a sessão certa resolve no Skip).
+  // Mapa CPF→PACIENTE.ID: o Skip usa para vincular o pac_id à sessão (que abre pelo CPF).
+  const mapaPacientes = [...mapa.entries()].map(([pacId, s]) => ({ cpf: s.cpf, pac_id: pacId }))
   const envelope: Envelope = {
     source: 'autolac',
     tenantRef: deps.tenantRef,
     unitRef: unidades[0],
     observedAt: agora().toISOString(),
     records: retratos,
+    pacientes: mapaPacientes,
     nextCursor: null,
     completeness: retratos.every((r) => r.completeness === 'complete') ? 'complete' : 'partial',
   }
@@ -162,7 +115,7 @@ export async function rodarCiclo(deps: CicloDeps): Promise<ResultadoCiclo> {
   resultado.confirmados = confirmados
   resultado.retratosEnviados = retratos.length
   const idsConfirmados = fichas.filter((f) => confirmados.includes(String(f.ID))).map((f) => f.ID)
-  const novoEstado = proximoCursor(estado, idsConfirmados)
+  const novoEstado = proximoCursor(estado, idsConfirmados) 
   if (novoEstado && novoEstado !== estado) {
     await deps.cursor.salvar(novoEstado)
   }

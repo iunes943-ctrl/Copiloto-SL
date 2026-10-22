@@ -61,6 +61,8 @@ export type Envelope = {
   unitRef: string
   observedAt: string
   records: Retrato[]
+  /** Mapa CPF→PACIENTE.ID das sessões resolvidas — o Skip casa a sessão pelo pac_id. */
+  pacientes: { cpf: string; pac_id: number }[]
   nextCursor: number | null
   completeness: 'complete' | 'partial'
 }
