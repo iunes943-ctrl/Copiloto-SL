@@ -52,6 +52,7 @@ export type Retrato = {
   completeness: 'complete' | 'partial'
   contentHash: string
   observedAt: string
+  session_id: string // sessão do Skip que originou a leitura — o Skip roteia por ela
 }
 
 export type Envelope = {
@@ -93,6 +94,7 @@ export function normalizarFicha(
   ficha: LinhaFicha,
   itens: LinhaItem[],
   paciente: LinhaPaciente | null,
+  sessionId: string,
   agora: Date = new Date(),
 ): Retrato {
   const items: ItemNormalizado[] = itens.map((it) => ({
@@ -111,7 +113,8 @@ export function normalizarFicha(
   return {
     ...retratoBase,
     completeness,
-    contentHash: hashRetrato(retratoBase),
+    contentHash: hashRetrato(retratoBase), // hash só sobre conteúdo — session_id fora, idempotência estável
     observedAt: agora.toISOString(),
+    session_id: sessionId,
   }
 }
