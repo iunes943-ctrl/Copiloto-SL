@@ -12,6 +12,7 @@ Processo Node que lê o Microsoft SQL Server do AutoLac (**somente leitura**) e 
 - Worker com TDD: testes C1/C2/C3 verdes (8/8), typecheck e build limpos.
 - Porta 754 do SQL provada aberta ao público (21/10, nc via 4G + check-host.net) — sem allowlist de IP.
 - Login `abilio` provado: conecta de fora, `db_datareader` (leitor=1, escritor=0, ddl=0).
+- `AUTOLAC_SQL_TRUST_CERT` — se o SQL do fornecedor usar certificado próprio (comum em SQL Server self-hosted), `=true`; a conexão segue criptografada, só não valida a cadeia do certificado.
 
 ## Estrutura
 
@@ -43,6 +44,6 @@ npm start          # node dist/main.js (requer segredos no ambiente)
 
 ## Segredos (nunca versionados)
 
-`SKIP_BACKEND_URL`, `AUTOLAC_SQL_HOST/PORT/DATABASE/USER/PASSWORD/ENCRYPT`, `AUTOLAC_INGEST_TOKEN`, `AUTOLAC_POLL_INTERVAL_S` — colados no painel do Render (Environment), nunca no repositório.
+`SKIP_BACKEND_URL`, `AUTOLAC_SQL_HOST/PORT/DATABASE/USER/PASSWORD/ENCRYPT/TRUST_CERT`, `AUTOLAC_INGEST_TOKEN`, `AUTOLAC_POLL_INTERVAL_S` — colados no painel do Render (Environment), nunca no repositório.
 
 **Regra de ouro:** nunca escrever no banco do AutoLac; nunca versionar `.env`.
