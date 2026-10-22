@@ -31,7 +31,7 @@ const ITEM_OP: LinhaItem = { ID: 9144600, SOLICITACAO_ID: 1477558, EXAME: 'OP', 
 const PACIENTE_PARTICULAR: LinhaPaciente = {
   ID: 1542377,
   NOME: 'PACIENTE DEMO',
-  CPF: null,
+  CPF: '11122233344',
   DATANASCIMENTO: '1980-01-01',
   SEXO: 'F',
   CONVENIO: null,
@@ -39,7 +39,7 @@ const PACIENTE_PARTICULAR: LinhaPaciente = {
   INATIVO: 'F',
 }
 
-const PACIENTE_PLANO: LinhaPaciente = { ...PACIENTE_PARTICULAR, ID: 1542378, CONVENIO: 'UNIMED', PLANO: 'NACIONAL PLUS' }
+const PACIENTE_PLANO: LinhaPaciente = { ...PACIENTE_PARTICULAR, ID: 1542378, CPF: '55566677788', CONVENIO: 'UNIMED', PLANO: 'NACIONAL PLUS' }
 
 function clienteFalso(tabelas: {
   fichas?: LinhaFicha[]
@@ -69,6 +69,19 @@ function clienteFalso(tabelas: {
           ?.split(',')
           .map((x) => Number(x.trim()))
           .filter(Number.isFinite) ?? []
+      // Resolução CPF → PACIENTE.ID: statement com REPLACE( sobre CPF e lista IN de CPFs entre aspas
+      if (s.includes('PACIENTE') && s.includes('REPLACE(')) {
+        const cpfsIn = /IN \(([^)]+)\)/.exec(statement)?.[1]
+          ?.split(',')
+          .map((x) => x.trim().replace(/^'|'$/g, '')) ?? []
+        const cpfsDig = cpfsIn.map((c) => c.replace(/\D/g, ''))
+        return {
+          recordset: (tabelas.pacientes ?? []).filter((p) => {
+            const cpf = String(p.CPF ?? '').replace(/\D/g, '')
+            return cpf.length > 0 && cpfsDig.includes(cpf)
+          }) as unknown as T[],
+        }
+      }
       const locaisIn = /LOCAL\s+IN\s+\(([^)]+)\)/.exec(statement)?.[1]
         ?.split(',')
         .map((x) => x.trim().replace(/^'|'$/g, '')) ?? []
@@ -112,7 +125,7 @@ type EnvelopeCapturado = {
   source: string
   tenantRef: string
   unitRef: string
-  records: { encounterExternalId: string; patientExternalId: string; profile: string; items: { examCode: string }[]; completeness: string }[]
+  records: { encounterExternalId: string; patientExternalId: string; profile: string; items: { examCode: string }[]; completeness: string; session_id: string }[]
   completeness: string
 }
 
@@ -144,7 +157,7 @@ describe('SPEC-1-003 C1 — leitura da ficha (prova de leitura)', () => {
     const sql = clienteFalso({ fichas: [FICHA], itens: [ITEM_OP], pacientes: [PACIENTE_PARTICULAR] })
     const enviados: EnvelopeCapturado[] = []
     const cursor = cursorFalso(null)
-    const deps = depsCom(sql, sessoesFalsas([SESSAO('1542377')]), ingestFalso({ ok: true, enviados }), cursor)
+    const deps = depsCom(sql, sessoesFalsas([SESSAO('11122233344')]), ingestFalso({ ok: true, enviados }), cursor)
 
     const r = await rodarCiclo(deps)
 
@@ -161,6 +174,7 @@ describe('SPEC-1-003 C1 — leitura da ficha (prova de leitura)', () => {
     expect(retrato.profile).toBe('particular') // CONVENIO NULL = particular (prova da sessão)
     expect(retrato.completeness).toBe('complete')
     expect(retrato.items).toEqual([{ examCode: 'OP', quantity: 1, status: 'P' }])
+    expect(retrato.session_id).toBe('DEMO-SES1') // sessão que originou a leitura — o Skip roteia por ela
     // Nenhuma consulta de escrita registrada
     for (const c of sql.consultas) {
       expect(c.trim().toUpperCase().startsWith('SELECT')).toBe(true)
@@ -199,12 +213,12 @@ describe('SPEC-1-003 C2 — retrato único, roteado, cursor após confirmação'
     const cursor = cursorFalso(null)
 
     // Ciclo 1: ingest falha → cursor não avança
-    const depsFalha = depsCom(sql, sessoesFalsas([SESSAO('1542377')]), ingestFalso({ ok: false, enviados }), cursor)
+    const depsFalha = depsCom(sql, sessoesFalsas([SESSAO('11122233344')]), ingestFalso({ ok: false, enviados }), cursor)
     await expect(rodarCiclo(depsFalha)).rejects.toThrow(/INGEST_500/)
     expect(cursor.salvo).toHaveLength(0)
 
     // Ciclo 2: ingest confirma → cursor avança para 1477558
-    const depsOk = depsCom(sql, sessoesFalsas([SESSAO('1542377')]), ingestFalso({ ok: true, confirmados: ['1477558'], enviados }), cursor)
+    const depsOk = depsCom(sql, sessoesFalsas([SESSAO('11122233344')]), ingestFalso({ ok: true, confirmados: ['1477558'], enviados }), cursor)
     const r = await rodarCiclo(depsOk)
     expect(cursor.salvo).toHaveLength(1)
     expect(cursor.salvo[0].ultimaFichaId).toBe(1477558)
@@ -213,24 +227,24 @@ describe('SPEC-1-003 C2 — retrato único, roteado, cursor após confirmação'
     // Ciclo 3: mesma ficha repetida — cursor já avançou; consulta incremental não traz de novo
     const sql3 = clienteFalso({ fichas: [], itens: [], pacientes: [] })
     const enviados3: EnvelopeCapturado[] = []
-    const deps3 = depsCom(sql3, sessoesFalsas([SESSAO('1542377')]), ingestFalso({ ok: true, enviados: enviados3 }), cursor)
+    const deps3 = depsCom(sql3, sessoesFalsas([SESSAO('11122233344')]), ingestFalso({ ok: true, enviados: enviados3 }), cursor)
     const r3 = await rodarCiclo(deps3)
     expect(r3.estadoFonte).toBe('aguardando')
     expect(enviados3).toHaveLength(0)
 
     // Sessão em outra unidade: ficha é de SL, sessão pede PM → nada lido
     const enviados4: EnvelopeCapturado[] = []
-    const deps4 = depsCom(sql, sessoesFalsas([SESSAO('1542377', 'PM')]), ingestFalso({ ok: true, enviados: enviados4 }), cursor)
+    const deps4 = depsCom(sql, sessoesFalsas([SESSAO('11122233344', 'PM')]), ingestFalso({ ok: true, enviados: enviados4 }), cursor)
     const r4 = await rodarCiclo(deps4)
     expect(r4.fichasLidas).toBe(0)
     expect(enviados4).toHaveLength(0)
   })
 
   it('SPEC-1-003 C2: retrato parcial (sem itens) não vira complete; perfil plano resolve pelo convênio do paciente', async () => {
-    const retratoParcial = normalizarFicha(FICHA, [], PACIENTE_PARTICULAR)
+    const retratoParcial = normalizarFicha(FICHA, [], PACIENTE_PARTICULAR, 'DEMO-SES1')
     expect(retratoParcial.completeness).toBe('partial')
 
-    const retratoCompleto = normalizarFicha(FICHA, [ITEM_OP], PACIENTE_PLANO)
+    const retratoCompleto = normalizarFicha(FICHA, [ITEM_OP], PACIENTE_PLANO, 'DEMO-SES1')
     expect(retratoCompleto.completeness).toBe('complete')
     expect(retratoCompleto.profile).toBe('plano')
     expect(perfilDoPaciente({ CONVENIO: null, PLANO: null })).toBe('particular')
@@ -253,7 +267,7 @@ describe('SPEC-1-003 C3 — indisponibilidade, estrutura alterada, cancelamento 
       },
     })
     const cursor = cursorFalso({ ultimaFichaId: 1477550, atualizadoEm: '2026-10-21T19:00:00Z' })
-    const deps = depsCom(sql, sessoesFalsas([SESSAO('1542377')]), ingestFalso({ ok: true, enviados: [] }), cursor)
+    const deps = depsCom(sql, sessoesFalsas([SESSAO('11122233344')]), ingestFalso({ ok: true, enviados: [] }), cursor)
     await expect(rodarCiclo(deps)).rejects.toThrow()
     expect(tentativas).toBeLessThanOrEqual(3) // 1 + 2 retries, sem retry agressivo
     expect(cursor.salvo).toHaveLength(0) // cursor preservado
@@ -264,7 +278,7 @@ describe('SPEC-1-003 C3 — indisponibilidade, estrutura alterada, cancelamento 
     const sql = clienteFalso({ fichas: [], itens: [], pacientes: [] })
     const enviados: EnvelopeCapturado[] = []
     const cursor = cursorFalso({ ultimaFichaId: 1477557, atualizadoEm: '2026-10-21T19:00:00Z' })
-    const deps = depsCom(sql, sessoesFalsas([SESSAO('1542377')]), ingestFalso({ ok: true, enviados }), cursor)
+    const deps = depsCom(sql, sessoesFalsas([SESSAO('11122233344')]), ingestFalso({ ok: true, enviados }), cursor)
     const r = await rodarCiclo(deps)
     expect(r.fichasLidas).toBe(0)
     expect(enviados).toHaveLength(0)
