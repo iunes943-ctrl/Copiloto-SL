@@ -39,24 +39,28 @@ const sessoes = criarSessoesClient({ baseUrl: SKIP_BACKEND_URL, token: TOKEN })
 const ingest = criarIngestClient({ baseUrl: SKIP_BACKEND_URL, token: TOKEN })
 
 // Cursor/checkpoint persistente no Skip (coleção sync_cursors) — via rota autenticada.
+// A rota exige o tenant (GET ?tenant= / POST tenant_external_key) e falha LOUD:
+// cursor silencioso = releitura infinita ou avanço perdido.
+const TENANT_REF = 'SL'
 const cursor: CursorStore = {
   async ler() {
-    const r = await fetch(SKIP_BACKEND_URL + '/backend/v1/autolac/cursor', {
+    const r = await fetch(SKIP_BACKEND_URL + '/backend/v1/autolac/cursor?tenant=' + TENANT_REF, {
       headers: { 'X-Copiloto-Ingest': TOKEN },
       signal: AbortSignal.timeout(10_000),
     })
-    if (!r.ok) return null
+    if (!r.ok) throw new Error('CURSOR_' + r.status + ': falha ao ler checkpoint')
     const corpo = (await r.json()) as { cursor?: { ultimaFichaId?: number; atualizadoEm?: string } | null }
     if (!corpo.cursor?.ultimaFichaId) return null
     return { ultimaFichaId: corpo.cursor.ultimaFichaId, atualizadoEm: corpo.cursor.atualizadoEm ?? new Date().toISOString() }
   },
   async salvar(estado) {
-    await fetch(SKIP_BACKEND_URL + '/backend/v1/autolac/cursor', {
+    const r = await fetch(SKIP_BACKEND_URL + '/backend/v1/autolac/cursor', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Copiloto-Ingest': TOKEN },
-      body: JSON.stringify({ ultimaFichaId: estado.ultimaFichaId, atualizadoEm: estado.atualizadoEm }),
+      body: JSON.stringify({ tenant_external_key: TENANT_REF, ultimaFichaId: estado.ultimaFichaId, atualizadoEm: estado.atualizadoEm }),
       signal: AbortSignal.timeout(10_000),
     })
+    if (!r.ok) throw new Error('CURSOR_' + r.status + ': falha ao gravar checkpoint')
   },
 }
 
@@ -71,7 +75,7 @@ async function main(): Promise<void> {
   let espera = 1000
   for (;;) {
     try {
-      const r = await rodarCiclo({ sql: sqlCliente, sessoes, ingest, cursor, tenantRef: 'SL' })
+      const r = await rodarCiclo({ sql: sqlCliente, sessoes, ingest, cursor, tenantRef: TENANT_REF })
       console.log(
         `[worker] ciclo: sessoes=${r.sessoesAbertas} lidas=${r.fichasLidas} enviados=${r.retratosEnviados} fonte=${r.estadoFonte}`,
       )
