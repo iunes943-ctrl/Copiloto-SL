@@ -95,8 +95,31 @@ export async function rodarCiclo(deps: CicloDeps): Promise<ResultadoCiclo> {
   // 3) Cursor persistente.
   const estado = await deps.cursor.ler()
 
-  // 4) Leitura incremental só dos pacientes/unidades com sessão aberta.
-  const idsPacientes = sessoes.map((s) => Number(s.cpf)).filter((n) => Number.isFinite(n))
+  // 4) Resolução CPF → PACIENTE.ID via SQL (a sessão abre pelo CPF, não pelo ID).
+  const cpfs = [...new Set(sessoes.map((s) => String(s.cpf).replace(/\D/g, '')).filter((c) => c.length > 0))]
+  if (cpfs.length === 0) {
+    resultado.estadoFonte = 'aguardando'
+    return resultado
+  }
+  const listaCpfs = cpfs.map((c) => `'${c}'`).join(',')
+  const linhasPacientes = await deps.sql.query<{ ID: number; CPF: string | null }>(
+    `SELECT ${MAPEAMENTO.paciente.chave}, CPF
+     FROM ${MAPEAMENTO.paciente.tabela}
+     WHERE REPLACE(REPLACE(REPLACE(CPF, '.', ''), '-', ''), ' ', '') IN (${listaCpfs})`,
+  )
+  // PACIENTE.ID → sessão: 1º CPF normalizado que casar vence; entrada existente não é sobrescrita.
+  const mapa = new Map<number, SessaoAberta>()
+  for (const linha of linhasPacientes.recordset) {
+    const cpfLinha = String(linha.CPF ?? '').replace(/\D/g, '')
+    if (!cpfLinha) continue
+    const sessao = sessoes.find((s) => String(s.cpf).replace(/\D/g, '') === cpfLinha)
+    if (sessao && !mapa.has(linha.ID)) mapa.set(linha.ID, sessao)
+  }
+  const idsPacientes = [...mapa.keys()]
+  if (idsPacientes.length === 0) {
+    resultado.estadoFonte = 'aguardando'
+    return resultado
+  }
   const unidades = [...new Set(sessoes.map((s) => s.unit_local))]
   const { fichas, itens, pacientes } = await lerFichas(deps.sql, idsPacientes, unidades, estado?.ultimaFichaId ?? 0)
   resultado.fichasLidas = fichas.length
@@ -105,7 +128,7 @@ export async function rodarCiclo(deps: CicloDeps): Promise<ResultadoCiclo> {
     return resultado
   }
 
-  // 5) Normaliza retratos (completeness exige itens).
+  // 5) Normaliza retratos (completeness exige itens); session_id vem da sessão que casou o CPF.
   const itensPorFicha = new Map<number, LinhaItem[]>()
   for (const it of itens) {
     const lista = itensPorFicha.get(it.SOLICITACAO_ID) ?? []
@@ -114,7 +137,13 @@ export async function rodarCiclo(deps: CicloDeps): Promise<ResultadoCiclo> {
   }
   const pacPorId = new Map(pacientes.map((p) => [p.ID, p]))
   const retratos = fichas.map((f) =>
-    normalizarFicha(f, itensPorFicha.get(f.ID) ?? [], pacPorId.get(f.PACIENTE) ?? null, agora()),
+    normalizarFicha(
+      f,
+      itensPorFicha.get(f.ID) ?? [],
+      pacPorId.get(f.PACIENTE) ?? null,
+      mapa.get(f.PACIENTE)?.session_id ?? '',
+      agora(),
+    ),
   )
 
   // 6) Envelope para o Skip — roteado por session_id (a sessão certa resolve no Skip).
