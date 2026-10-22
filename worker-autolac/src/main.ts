@@ -32,6 +32,7 @@ const sqlCliente: SqlClient = criarPool({
   user: env('usuário de integração só leitura', 'AUTOLAC_SQL_USER'),
   password: env('senha do usuário de integração', 'AUTOLAC_SQL_PASSWORD'),
   encrypt: (process.env.AUTOLAC_SQL_ENCRYPT ?? 'true') === 'true',
+  trustCert: (process.env.AUTOLAC_SQL_TRUST_CERT ?? 'false') === 'true',
 })
 
 const sessoes = criarSessoesClient({ baseUrl: SKIP_BACKEND_URL, token: TOKEN })
