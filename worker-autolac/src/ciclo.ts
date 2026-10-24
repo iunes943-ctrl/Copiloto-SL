@@ -37,22 +37,31 @@ export type ResultadoCiclo = {
 /** Janela de releitura de edições (minutos) — ficha editada dentro dela é relida. */
 export const JANELA_EDICAO_MIN = 30
 
+/** Formata data para o SQL Server (datetime, sem T/Z). */
+const fmtSql = (d: Date): string => d.toISOString().slice(0, 19).replace('T', ' ')
+
 /** Consulta parametrizada — os IDs vêm das sessões abertas, nunca concatenação. */
 export async function lerFichas(
   cliente: SqlClient,
   idsPacientes: number[],
   unidades: string[],
   desdeFichaId: number,
+  desdeDataEdicao: Date | null = null,
 ): Promise<{ fichas: LinhaFicha[]; itens: LinhaItem[]; pacientes: LinhaPaciente[] }> {
   if (idsPacientes.length === 0 || unidades.length === 0) {
     return { fichas: [], itens: [], pacientes: [] }
   }
   const ids = idsPacientes.join(',')
   const locais = unidades.map((u) => `'${u.replace(/'/g, "''")}'`).join(',')
+  // C3: fichas novas (ID > cursor) OU editadas dentro da janela (DATA >= limite).
+  const clausulaJanela =
+    desdeDataEdicao && !Number.isNaN(desdeDataEdicao.getTime())
+      ? ` AND (ID > ${desdeFichaId} OR DATA >= '${fmtSql(desdeDataEdicao)}')`
+      : ` AND ID > ${desdeFichaId}`
   const fichas = await cliente.query<LinhaFicha>(
     `SELECT ${MAPEAMENTO.ficha.colunas.join(', ')}
      FROM ${MAPEAMENTO.ficha.tabela}
-     WHERE PACIENTE IN (${ids}) AND LOCAL IN (${locais}) AND ID > ${desdeFichaId}`,
+     WHERE PACIENTE IN (${ids}) AND LOCAL IN (${locais})${clausulaJanela}`,
   )
   const idsFichas = fichas.recordset.map((f) => f.ID)
   if (idsFichas.length === 0) return { fichas: [], itens: [], pacientes: [] }
@@ -168,7 +177,8 @@ export async function rodarCiclo(deps: CicloDeps): Promise<ResultadoCiclo> {
     return resultado
   }
   const unidades = [...new Set(sessoes.map((s) => s.unit_local))]
-  const bruto = await lerFichas(deps.sql, idsPacientes, unidades, estado?.ultimaFichaId ?? 0)
+  const limiteEdicao = new Date(agora().getTime() - JANELA_EDICAO_MIN * 60_000)
+  const bruto = await lerFichas(deps.sql, idsPacientes, unidades, estado?.ultimaFichaId ?? 0, limiteEdicao)
   // C3: releitura de edições recentes — ficha editada na janela volta mesmo
   // com ID <= cursor (o hash muda → o ingest grava novo retrato).
   const janela = lerJanela(bruto, estado, agora())
