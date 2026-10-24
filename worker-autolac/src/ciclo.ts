@@ -4,6 +4,8 @@
  * RN-11: lê só fichas das sessões abertas (paciente + unidade) desde o cursor; nunca a base inteira.
  * RN-12: retrato completo só quando cabeçalho e itens vieram; cursor avança após commit (2xx).
  * RN-13: estrutura diferente do mapeamento → leitura para com ERRO_ESTRUTURA.
+ * SPEC-1-003/C3: edição recente (janela de 30 min) é relida — hash muda → novo retrato;
+ *                cancelamento (ID sumiu) gera retrato com sourceStatus 'cancelada'.
  */
 import type { SqlClient } from './sql.js'
 import { MAPEAMENTO, verificarEstrutura } from './sql.js'
@@ -11,7 +13,8 @@ import type { SessoesClient, SessaoAberta } from './sessoes.js'
 import type { IngestClient } from './ingest.js'
 import type { CursorStore, CursorState } from './cursor.js'
 import { proximoCursor } from './cursor.js'
-import { normalizarFicha, type LinhaFicha, type LinhaItem, type LinhaPaciente, type Envelope } from './adaptador.js'
+import { createHash } from 'node:crypto'
+import { normalizarFicha, type LinhaFicha, type LinhaItem, type LinhaPaciente, type Envelope, type Retrato } from './adaptador.js'
 
 export type CicloDeps = {
   sql: SqlClient
@@ -30,6 +33,9 @@ export type ResultadoCiclo = {
   cursor: CursorState | null
   estadoFonte: 'atualizado' | 'aguardando' | 'indisponivel' | 'leitura_parada'
 }
+
+/** Janela de releitura de edições (minutos) — ficha editada dentro dela é relida. */
+export const JANELA_EDICAO_MIN = 30
 
 /** Consulta parametrizada — os IDs vêm das sessões abertas, nunca concatenação. */
 export async function lerFichas(
@@ -63,6 +69,47 @@ export async function lerFichas(
      WHERE ID IN (${idsPac})`,
   )
   return { fichas: fichas.recordset, itens: itens.recordset, pacientes: pacientes.recordset }
+}
+
+/** Filtra a leitura bruta: fichas novas (ID > cursor) OU editadas dentro da janela. */
+export function lerJanela(
+  bruto: { fichas: LinhaFicha[]; itens: LinhaItem[]; pacientes: LinhaPaciente[] },
+  cursor: { ultimaFichaId: number } | null,
+  agora: Date,
+): { fichas: LinhaFicha[]; itens: LinhaItem[]; pacientes: LinhaPaciente[] } {
+  const ultimaFichaId = cursor?.ultimaFichaId ?? 0
+  const limiteEdicao = new Date(agora.getTime() - JANELA_EDICAO_MIN * 60_000)
+  const fichas = bruto.fichas.filter((f) => {
+    if (Number(f.ID) > ultimaFichaId) return true
+    const data = new Date(String(f.DATA))
+    return !Number.isNaN(data.getTime()) && data >= limiteEdicao
+  })
+  if (fichas.length === bruto.fichas.length) return bruto
+  const ids = new Set(fichas.map((f) => Number(f.ID)))
+  return {
+    fichas,
+    itens: bruto.itens.filter((it) => ids.has(Number(it.SOLICITACAO_ID))),
+    pacientes: bruto.pacientes,
+  }
+}
+
+/** Retrato de ficha cancelada (ID sumiu do banco — exclusão é física). */
+export function retratoCancelado(fichaId: string, agora: Date = new Date()): Retrato {
+  const base = {
+    encounterExternalId: String(fichaId),
+    patientExternalId: '',
+    profile: 'particular' as const,
+    sourceStatus: 'cancelada',
+    items: [],
+  }
+  const conteudo = JSON.stringify(base)
+  const hash = createHash('sha256').update(conteudo).digest('hex')
+  return {
+    ...base,
+    completeness: 'complete',
+    contentHash: hash,
+    observedAt: agora.toISOString(),
+  }
 }
 
 export async function rodarCiclo(deps: CicloDeps): Promise<ResultadoCiclo> {
@@ -121,7 +168,11 @@ export async function rodarCiclo(deps: CicloDeps): Promise<ResultadoCiclo> {
     return resultado
   }
   const unidades = [...new Set(sessoes.map((s) => s.unit_local))]
-  const { fichas, itens, pacientes } = await lerFichas(deps.sql, idsPacientes, unidades, estado?.ultimaFichaId ?? 0)
+  const bruto = await lerFichas(deps.sql, idsPacientes, unidades, estado?.ultimaFichaId ?? 0)
+  // C3: releitura de edições recentes — ficha editada na janela volta mesmo
+  // com ID <= cursor (o hash muda → o ingest grava novo retrato).
+  const janela = lerJanela(bruto, estado, agora())
+  const { fichas, itens, pacientes } = janela
   resultado.fichasLidas = fichas.length
   if (fichas.length === 0) {
     resultado.estadoFonte = 'aguardando'
