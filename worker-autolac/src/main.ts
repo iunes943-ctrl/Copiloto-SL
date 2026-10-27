@@ -73,9 +73,12 @@ async function main(): Promise<void> {
   console.log('[worker] estrutura OK — loop iniciado (intervalo ' + INTERVALO_S + 's)')
 
   let espera = 1000
+  // C3: memória de IDs vistos (id → timestamp) — PERSISTENTE entre ciclos;
+  // é ela que permite detectar o sumiço (cancelamento físico) da ficha.
+  const memoria = new Map<number, number>()
   for (;;) {
     try {
-      const r = await rodarCiclo({ sql: sqlCliente, sessoes, ingest, cursor, tenantRef: TENANT_REF })
+      const r = await rodarCiclo({ sql: sqlCliente, sessoes, ingest, cursor, tenantRef: TENANT_REF, memoria })
       console.log(
         `[worker] ciclo: sessoes=${r.sessoesAbertas} lidas=${r.fichasLidas} enviados=${r.retratosEnviados} fonte=${r.estadoFonte}`,
       )
