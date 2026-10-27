@@ -23,6 +23,8 @@ export type CicloDeps = {
   cursor: CursorStore
   tenantRef: string
   agora?: () => Date
+  /** Memória de IDs vistos recentes (id → timestamp) — para detectar sumiços (cancelamento físico). */
+  memoria?: Map<number, number>
 }
 
 export type ResultadoCiclo = {
@@ -184,7 +186,33 @@ export async function rodarCiclo(deps: CicloDeps): Promise<ResultadoCiclo> {
   const janela = lerJanela(bruto, estado, agora())
   const { fichas, itens, pacientes } = janela
   resultado.fichasLidas = fichas.length
-  if (fichas.length === 0) {
+
+  // C3: cancelamento físico — IDs vistos recentes que SUMIRAM do banco viram
+  // retrato com sourceStatus 'cancelada' (o Skip mostra o desfecho honesto).
+  // Memória: id → timestamp em que foi visto (expira após 2h). Roda ANTES do
+  // early-return: mesmo sem fichas novas, o sumiço precisa ser detectado.
+  const memoria = deps.memoria ?? new Map<number, number>()
+  const agoraMs = agora().getTime()
+  for (const f of fichas) memoria.set(Number(f.ID), agoraMs)
+  for (const [id, vistoEm] of memoria) {
+    if (agoraMs - vistoEm > 2 * 60 * 60_000) memoria.delete(id)
+  }
+  const idsMemoria = [...memoria.keys()]
+  const sumidos: number[] = []
+  if (idsMemoria.length > 0) {
+    const listaIds = idsMemoria.join(',')
+    const r = await deps.sql.query<{ ID: number }>(
+      `SELECT ID FROM ${MAPEAMENTO.ficha.tabela} WHERE ID IN (${listaIds})`,
+    )
+    const vivos = new Set(r.recordset.map((x) => Number(x.ID)))
+    for (const id of idsMemoria) {
+      if (!vivos.has(id)) {
+        memoria.delete(id)
+        sumidos.push(id)
+      }
+    }
+  }
+  if (fichas.length === 0 && sumidos.length === 0) {
     resultado.estadoFonte = 'aguardando'
     return resultado
   }
@@ -206,6 +234,9 @@ export async function rodarCiclo(deps: CicloDeps): Promise<ResultadoCiclo> {
       agora(),
     ),
   )
+  for (const id of sumidos) {
+    retratos.push(retratoCancelado(String(id), agora()))
+  }
 
   // 6) Envelope para o Skip — roteado por session_id (a sessão certa resolve no Skip).
   // Mapa CPF→PACIENTE.ID: o Skip usa para vincular o pac_id à sessão (que abre pelo CPF).
